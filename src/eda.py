@@ -1,7 +1,7 @@
 # %%
 import pandas as pd
 # %%
-df = pd.read_csv('../data/train.csv')
+df = pd.read_csv('data/train.csv')
 # %%
 df.shape
 # %%
@@ -80,6 +80,21 @@ import numpy as np
 # %%
 df['SalePrice']=np.log1p(df['SalePrice'])
 # %%
+df['house_age'] = df['YrSold'] - df['YearBuilt']
+df['remod_age'] = df['YrSold'] - df['YearRemodAdd']
+# %%
+df['remod_age'] = df['remod_age'].clip(lower=0)
+# %%
+df[['house_age', 'remod_age']].describe()
+# %%
+df['total_sqft']=df['1stFlrSF']+df['2ndFlrSF']+df['TotalBsmtSF']
+df['total_bathrooms']=df['FullBath']+0.5*df['HalfBath']+df['BsmtFullBath']+0.5*df['BsmtHalfBath']
+df['has_pool'] = (df['PoolArea'] > 0).astype(int)
+df['has_garage'] = (df['GarageArea'] > 0).astype(int)
+df['has_fireplace'] = (df['Fireplaces'] > 0).astype(int)
+# %%
+df[['house_age', 'remod_age', 'total_sqft', 'total_bathrooms', 'has_pool', 'has_garage', 'has_fireplace']].describe()
+# %%
 X= df.drop(columns=['SalePrice', 'Id'])
 y=df['SalePrice']
 # %%
@@ -92,7 +107,7 @@ numeric_cols=['LotFrontage', 'LotArea', 'YearBuilt', 'YearRemodAdd', 'MasVnrArea
                 'BsmtFinSF1', 'BsmtFinSF2', 'BsmtUnfSF', 'TotalBsmtSF', '1stFlrSF',
                 '2ndFlrSF', 'LowQualFinSF', 'GrLivArea', 'GarageYrBlt', 'GarageArea',
                 'WoodDeckSF', 'OpenPorchSF', 'EnclosedPorch', '3SsnPorch', 'ScreenPorch',
-                'PoolArea', 'MiscVal']
+                'PoolArea', 'MiscVal', 'house_age', 'remod_age', 'total_sqft', 'total_bathrooms']
 # %%
 from sklearn.preprocessing import StandardScaler
 scaler = StandardScaler()
