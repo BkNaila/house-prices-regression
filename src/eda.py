@@ -1,8 +1,9 @@
 # %%
 import pandas as pd
 # %%
-df = pd.read_csv('data/train.csv')
-# %%
+from pathlib import Path
+path = Path('data/train.csv') if Path('data/train.csv').exists() else Path('../data/train.csv')
+df = pd.read_csv(path)# %%
 df.shape
 # %%
 df.info()
@@ -187,3 +188,126 @@ y_val_dollars = np.expm1(y_val)
 print("Final RMSE in $:", np.sqrt(mean_squared_error(y_val_dollars, preds_dollars)))
 print("Final R²:", r2_score(y_val, final_preds))
 # %%
+from sklearn.linear_model import ElasticNet
+elastic = ElasticNet(alpha=0.001, l1_ratio=0.5, max_iter=10000)
+elastic.fit(X_train, y_train)
+elastic_preds = elastic.predict(X_val)
+print("ElasticNet RMSE:", np.sqrt(mean_squared_error(y_val, elastic_preds)))
+print("ElasticNet R²:", r2_score(y_val, elastic_preds))
+# %%
+for a in [0.0001, 0.0003, 0.0005, 0.001]:
+    e = ElasticNet(alpha=a, l1_ratio=0.5, max_iter=10000)
+    e.fit(X_train, y_train)
+    p = e.predict(X_val)
+    print(a, np.sqrt(mean_squared_error(y_val, p)), r2_score(y_val, p))
+# %%
+import matplotlib.pyplot as plt
+
+best = ElasticNet(alpha=0.0001, l1_ratio=0.5, max_iter=10000)
+best.fit(X_train, y_train)
+preds = best.predict(X_val)
+
+actual = np.expm1(y_val)
+predicted = np.expm1(preds)
+
+plt.scatter(actual, predicted, alpha=0.5)
+plt.plot([actual.min(), actual.max()], [actual.min(), actual.max()], color='red')
+plt.xlabel("Actual price ($)")
+plt.ylabel("Predicted price ($)")
+plt.show()
+# %%
+coefs = pd.Series(best.coef_, index=X_train.columns)
+print(coefs.abs().sort_values(ascending=False).head(10))
+# %%
+print(X_train[['RoofMatl_ClyTile', 'Condition2_PosN', 'MSZoning_C (all)', 'Exterior1st_BrkComm', 'MiscFeature_TenC']].sum())
+# %%
+binary = [c for c in X_train.columns if X_train[c].nunique() == 2]
+rare = [c for c in binary if X_train[c].sum() < 10]
+print(len(rare), "rare columns dropped")
+
+X_train2 = X_train.drop(columns=rare)
+X_val2 = X_val.drop(columns=rare)
+
+m = ElasticNet(alpha=0.0001, l1_ratio=0.5, max_iter=10000)
+m.fit(X_train2, y_train)
+p = m.predict(X_val2)
+print("RMSE:", np.sqrt(mean_squared_error(y_val, p)))
+print("R²:", r2_score(y_val, p))
+# %%
+test_path = Path('data/test.csv') if Path('data/test.csv').exists() else Path('../data/test.csv')
+test = pd.read_csv(test_path)
+print(test.shape)
+missing = test.isnull().sum().sort_values(ascending=False)
+print(missing[missing > 0])
+# %%
+test[cols] = test[cols].fillna("None")
+zero_cols = ['GarageYrBlt', 'MasVnrArea', 'BsmtFinSF1', 'BsmtFinSF2', 'BsmtUnfSF',
+             'TotalBsmtSF', 'BsmtFullBath', 'BsmtHalfBath', 'GarageCars', 'GarageArea']
+test[zero_cols] = test[zero_cols].fillna(0)
+test['LotFrontage'] = test['LotFrontage'].fillna(df['LotFrontage'].median())
+for c in test.columns[test.isnull().any()]:
+    test[c] = test[c].fillna(test[c].mode()[0])
+
+print(test.isnull().sum().sum())
+# %%
+test[qual_cols] = test[qual_cols].apply(lambda c: c.map(qual_map))
+test['BsmtExposure'] = test['BsmtExposure'].map({'Gd':4, 'Av':3, 'Mn':2, 'No':1, 'None':0})
+test['GarageFinish'] = test['GarageFinish'].map({'Fin':3, 'RFn':2, 'Unf':1, 'None':0})
+test['Functional'] = test['Functional'].map({'Typ':7, 'Min1':6, 'Min2':5, 'Mod':4, 'Maj1':3, 'Maj2':2, 'Sev':1, 'Sal':0})
+test['LotShape'] = test['LotShape'].map({'Reg':3, 'IR1':2, 'IR2':1, 'IR3':0})
+test['PavedDrive'] = test['PavedDrive'].map({'Y':2, 'P':1, 'N':0})
+fin_map = {'GLQ':6, 'ALQ':5, 'BLQ':4, 'Rec':3, 'LwQ':2, 'Unf':1, 'None':0}
+test['BsmtFinType1'] = test['BsmtFinType1'].map(fin_map)
+test['BsmtFinType2'] = test['BsmtFinType2'].map(fin_map)
+test['Street'] = test['Street'].map({'Grvl': 0, 'Pave': 1})
+test['CentralAir'] = test['CentralAir'].map({'N': 0, 'Y': 1})
+
+test['house_age'] = test['YrSold'] - test['YearBuilt']
+test['remod_age'] = (test['YrSold'] - test['YearRemodAdd']).clip(lower=0)
+test['total_sqft'] = test['1stFlrSF'] + test['2ndFlrSF'] + test['TotalBsmtSF']
+test['total_bathrooms'] = test['FullBath'] + 0.5*test['HalfBath'] + test['BsmtFullBath'] + 0.5*test['BsmtHalfBath']
+test['has_pool'] = (test['PoolArea'] > 0).astype(int)
+test['has_garage'] = (test['GarageArea'] > 0).astype(int)
+test['has_fireplace'] = (test['Fireplaces'] > 0).astype(int)
+test = pd.get_dummies(test, columns=cols_to_check + ['Alley', 'Electrical'])
+
+print(test.shape)
+print("In train, missing from test:", set(X_train.columns) - set(test.columns))
+print("In test, not in train:", set(test.columns) - set(X_train.columns))
+# %%
+ids = test['Id']
+test_X = test.reindex(columns=X_train.columns, fill_value=0)
+
+test_X[numeric_cols] = scaler.transform(test_X[numeric_cols])
+
+print(test_X.shape)
+print(test_X.isnull().sum().sum())
+# %%
+print(X_train.shape[1] == test_X.shape[1])
+# %%
+import joblib
+
+test_preds = np.expm1(best.predict(test_X))
+print(test_preds[:5])
+print(test_preds.min(), test_preds.max())
+
+submission = pd.DataFrame({'Id': ids, 'SalePrice': test_preds})
+submission.to_csv('submission.csv', index=False)
+
+joblib.dump(best, '../models/elasticnet_house_prices.joblib')
+# %%
+print("Predictions above 755k:", (test_preds > 755000).sum())
+
+i = test_preds.argmax()
+print("Id:", ids.iloc[i], "predicted:", test_preds[i])
+print(test.loc[i, ['GrLivArea', 'total_sqft', 'LotArea', 'OverallQual', 'YearBuilt']])
+
+rare_flags = [c for c in X_train.columns if X_train[c].nunique() == 2 and X_train[c].sum() < 10]
+print([c for c in rare_flags if test_X.iloc[i][c] == 1])
+# %%
+test_preds = np.clip(test_preds, 34900, 755000)
+
+submission = pd.DataFrame({'Id': ids, 'SalePrice': test_preds})
+submission.to_csv('submission.csv', index=False)
+
+joblib.dump(best, '../models/elasticnet_house_prices.joblib')
